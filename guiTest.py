@@ -1,14 +1,17 @@
+import os
 import tkinter as tk
 from tkinter import ttk, messagebox
-from search_engine import SearchEngine
+
+from application import ApplicationManager
 
 class SearchApp:
     def __init__(self, root):
         self.root = root
         self.root.title("OS Search Engine")
-        self.root.geometry("750x450")  # Adjusted for better spacing
-        self.root.resizable(True, True)  # Allow window resizing
+        self.root.geometry("750x450")
+        self.root.resizable(True, True)
 
+        self.app_manager = ApplicationManager()
         self.create_widgets()
 
     def create_widgets(self):
@@ -47,26 +50,19 @@ class SearchApp:
 
         style.configure("Hover.TButton", background="#0078D7", foreground="white", padding=5, font=("Arial", 10, "bold"))
 
-        # Results Frame
         results_frame = ttk.Frame(self.root, padding=10)
         results_frame.pack(fill="both", expand=True)
 
-        # Scrollable Treeview for Results
-        columns = ("Name", "Path", "Size", "Modified")
+        columns = ("Name", "Path")
         self.results_tree = ttk.Treeview(results_frame, columns=columns, show="headings")
 
-        # Define column headings
         for col in columns:
             self.results_tree.heading(col, text=col)
             self.results_tree.column(col, anchor="w")
 
-        # Adjust column widths
-        self.results_tree.column("Name", width=180)
-        self.results_tree.column("Path", width=280)
-        self.results_tree.column("Size", width=100, anchor="center")
-        self.results_tree.column("Modified", width=120, anchor="center")
+        self.results_tree.column("Name", width=250)
+        self.results_tree.column("Path", width=450)
 
-        # Scrollbars
         tree_scroll_y = ttk.Scrollbar(results_frame, orient="vertical", command=self.results_tree.yview)
         tree_scroll_x = ttk.Scrollbar(results_frame, orient="horizontal", command=self.results_tree.xview)
         self.results_tree.configure(yscroll=tree_scroll_y.set, xscroll=tree_scroll_x.set)
@@ -75,33 +71,37 @@ class SearchApp:
         tree_scroll_x.pack(side="bottom", fill="x")
         self.results_tree.pack(fill="both", expand=True)
 
-        # Status Bar
         self.status_label = ttk.Label(self.root, text="Enter a query and click 'Search'", anchor="w", padding=5)
         self.status_label.pack(fill="x")
+        self.results_tree.bind("<Double-1>", self.open_selected_application)
 
-    def perform_search(self, event=None):  # Added 'event=None' to handle Enter key
+    def perform_search(self, event=None):
         query = self.query_entry.get().strip()
         if not query:
             messagebox.showwarning("Input Error", "Please enter a search query!")
             return
 
-        self.status_label.config(text="Searching... Please wait.")
+        self.status_label.config(text="Searching...")
         self.root.update_idletasks()
 
-        search_engine = SearchEngine(root_directory="/")
-        results = search_engine.search(query=query)
+        matching_apps = [app for app in self.app_manager.get_applications() if query.lower() in app.lower()]
 
-        # Clear previous results
         for row in self.results_tree.get_children():
             self.results_tree.delete(row)
 
-        # Display new results
-        if results:
-            for result in results:
-                self.results_tree.insert("", "end", values=(result.name, result.path, result.size, result.modified_date))
-            self.status_label.config(text=f"Search completed: {len(results)} results found.")
+        if matching_apps:
+            for app in matching_apps:
+                self.results_tree.insert("", "end", values=(os.path.basename(app), app))
+            self.status_label.config(text=f"Search completed: {len(matching_apps)} results found.")
         else:
-            self.status_label.config(text="No results found.")
+            self.status_label.config(text="No applications found.")
+    
+    def open_selected_application(self, event):
+        selected_item = self.results_tree.selection()
+        if selected_item:
+            app_path = self.results_tree.item(selected_item[0], "values")[1]  # Get app path
+            response = self.app_manager.open_application(app_path)
+            messagebox.showinfo("Application Launch", response)
 
 if __name__ == "__main__":
     root = tk.Tk()
