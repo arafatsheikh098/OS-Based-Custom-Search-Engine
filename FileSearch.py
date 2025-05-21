@@ -1,102 +1,60 @@
 import os
-import platform
 import subprocess
+import threading
+import platform
+import tkinter as tk
+from tkinter import ttk
 
 class FileFinder:
     def __init__(self):
-        self.os_name = platform.system()
+        self.search_directories = [
+            r"C:/ProgramData/Microsoft/Windows/Start Menu/Programs",
+            r"C:/Program Files",
+            r"C:/Program Files (x86)",
+            r"C:/Users/monju/Downloads",
+            r"C:/Users/monju/Documents",
+        ]
+    def find_file(self, query, callback):
+        results = []
+        results_lock = threading.Lock()
 
-    def get_search_directories(self):
-        if self.os_name == "Windows":
-            return [os.path.expanduser("~\\Documents"), os.path.expanduser("~\\Desktop"), "C:\\"]
-        elif self.os_name == "Darwin":  
-            return [os.path.expanduser("~/Documents"), os.path.expanduser("~/Desktop"), "/"]
-        else:  
-            return [os.path.expanduser("~"), "/"]
-
-    def find_file(self, file_name):
-        search_dirs = self.get_search_directories()
-        found_files = []
-
-        for directory in search_dirs:
+        def search_directory(directory):
+            nonlocal results
             try:
-                for root, _, files in os.walk(directory):
-                    for file in files:
-                        if file_name.lower() in file.lower():
-                            found_files.append(os.path.join(root, file))
+                for dirpath, dirnames, filenames in os.walk(directory, followlinks=True):
+                    
+                    if not any(dirpath.startswith(d) for d in self.search_directories):
+                        continue
+                    
+                    for filename in filenames:
+                        if query.lower() in filename.lower():
+                            filepath = os.path.join(dirpath, filename)
+                            with results_lock:
+                                results.append(filepath)
+
             except PermissionError:
-                print(f"Skipping {directory}: Permission denied")
+                print(f"Permission denied: {directory}")
+                pass 
 
-        return found_files if found_files else None
+        threads = []
+        for directory in self.search_directories:
+            thread = threading.Thread(target=search_directory, args=(directory,))
+            threads.append(thread)
+            thread.start()
 
-    def find_file_system_wide(self, file_name):
-        if self.os_name == "Windows":
-            command = f'dir /s /b C:\\*{file_name}* 2>nul'  
-        else:
-            command = f'find / -name "{file_name}" 2>/dev/null'  
+        for thread in threads:
+            thread.join()
 
-        try:
-            result = os.popen(command).read().strip()
-            found = result.split("\n") if result else []
-            return found if found else None
-        except Exception as e:
-            return f"Error searching for file: {e}"
+        callback(results)
 
     def open_file(self, file_path):
+        """Open a file using the default system application."""
         try:
-            if self.os_name == "Windows":
-                os.startfile(file_path)  
-            elif self.os_name == "Darwin":
-                subprocess.run(["open", file_path])  
-            else:
-                subprocess.run(["xdg-open", file_path])  
-            print(f"Opening file: {file_path}")
+            if os.name == "nt":  # Windows
+                os.startfile(file_path)
+            elif os.name == "posix":  # macOS or Linux
+                subprocess.run(["open", file_path] if platform.system() == "Darwin" else ["xdg-open", file_path])
+            return f"Opening {file_path}"
         except Exception as e:
             print(f"Error opening file: {e}")
-
-if __name__ == "__main__":
-    finder = FileFinder()
-
-    while True:
-        file_name = input("Enter the file name to search (or type 'exit' to quit): ").strip()
-        if file_name.lower() == "exit":
-            print("Exiting program.")
-            break
-
-        print("\nSearching in common directories...")
-        found_files = finder.find_file(file_name)
-
-        if found_files:
-            print("\nFound Files:")
-            for index, file in enumerate(found_files):
-                print(f"{index + 1}. {file}")
-
-            open_choice = input("\nEnter the number of the file to open (or 'no' to skip): ").strip()
-            if open_choice.isdigit():
-                selected_index = int(open_choice) - 1
-                if 0 <= selected_index < len(found_files):
-                    finder.open_file(found_files[selected_index])
-                else:
-                    print("Invalid selection.")
-        else:
-            print("File not found.")
-
-            choice = input("\nDo you want to search the entire system? (yes/no): ").strip().lower()
-            if choice == "yes":
-                print("\nSearching system-wide (this may take time)...")
-                found_files = finder.find_file_system_wide(file_name)
-
-                if found_files:
-                    print("\nFound Files:")
-                    for index, file in enumerate(found_files):
-                        print(f"{index + 1}. {file}")
-
-                    open_choice = input("\nEnter the number of the file to open (or 'no' to skip): ").strip()
-                    if open_choice.isdigit():
-                        selected_index = int(open_choice) - 1
-                        if 0 <= selected_index < len(found_files):
-                            finder.open_file(found_files[selected_index])
-                        else:
-                            print("Invalid selection.")
-                else:
-                    print("File not found system-wide.")
+            return f"Error opening file: {e}"
